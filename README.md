@@ -77,6 +77,10 @@ clearly what went wrong, rather than leaving you with a broken setup.
 
 ## Step 3: Turn the feature on for your game
 
+By default, the new driver does nothing different for any game -
+you have to explicitly tell it which game(s) should get the mesh
+shader fix.
+
 Download `bc250-add-game.sh` from this repo too, then:
 
 ```bash
@@ -85,7 +89,17 @@ bash ~/Downloads/bc250-add-game.sh
 ```
 
 It'll ask you to launch your game, show you a list of running games
-to pick from, and set everything up automatically.
+to pick from, and set everything up automatically - no manual file
+editing needed.
+
+**To add another game later**, just run the script again - it'll add
+the new game alongside any you've already configured, without
+removing them.
+
+**If the script doesn't find your game in the list**, make sure the
+game is actually running (or has at least tried to launch) at the
+moment you press Enter in the script. Some games take a few seconds
+to start their actual process after you click Play in Steam.
 
 ---
 
@@ -100,6 +114,42 @@ VK_ICD_FILENAMES=/home/USERNAME/radeon_driconf_icd.x86_64.json %command%
 ```
 
 Launch the game normally from Steam.
+
+---
+
+## Don't want to set a launch option for every game?
+
+On a regular Linux system you'd normally do this by replacing the
+system driver file directly - but Bazzite keeps `/usr/lib` permanently
+read-only by design, so that approach doesn't work here.
+
+Instead, you can set the environment variable for your **entire
+desktop session** instead of per-game, using systemd's user
+environment system. This applies it to everything you run - Steam,
+every game, everything - without touching any system file:
+
+```bash
+mkdir -p ~/.config/environment.d
+cat > ~/.config/environment.d/bc250-mesh-shaders.conf << EOF
+VK_ICD_FILENAMES=$HOME/radeon_driconf_icd.x86_64.json
+EOF
+```
+
+**Log out and log back in** (a full session restart, not just closing
+Steam) for this to take effect. After that, you can skip Step 4
+entirely - no launch option needed for any game.
+
+Since the driconf patch only activates for games listed in
+`~/.drirc` anyway, this is just as safe as the launch-option approach
+- it doesn't force the spoof on for everything, it just makes the
+*driver itself* available everywhere, while `~/.drirc` still controls
+which games actually use the feature.
+
+**To undo this later:**
+```bash
+rm ~/.config/environment.d/bc250-mesh-shaders.conf
+```
+Then log out and back in again.
 
 ---
 

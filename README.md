@@ -206,6 +206,40 @@ That's it. Launch the game normally from Steam.
 
 ---
 
+## Don't want to set a launch option for every game?
+
+You can set the environment variable for your **entire desktop
+session** instead, using systemd's user environment system. This
+applies it to everything you run - Steam, every game, everything -
+without needing a launch option each time:
+
+```bash
+mkdir -p ~/.config/environment.d
+cat > ~/.config/environment.d/bc250-mesh-shaders.conf << EOF
+VK_ICD_FILENAMES=$HOME/radeon_driconf_icd.x86_64.json
+EOF
+```
+
+**Log out and log back in** (a full session restart, not just closing
+Steam) for this to take effect. After that, you can skip Step 7
+entirely for any game you set up.
+
+Since the driconf patch only activates for games listed in `~/.drirc`
+anyway, this is just as safe as the launch-option approach - it
+doesn't force the spoof on for everything, it just makes the *driver
+itself* available everywhere, while `~/.drirc` still controls which
+games actually use the feature. This also avoids touching your
+system's actual driver file at all, unlike replacing
+`/usr/lib/libvulkan_radeon.so` directly.
+
+**To undo this later:**
+```bash
+rm ~/.config/environment.d/bc250-mesh-shaders.conf
+```
+Then log out and back in again.
+
+---
+
 ## How do I know it worked?
 
 Run this in a terminal:

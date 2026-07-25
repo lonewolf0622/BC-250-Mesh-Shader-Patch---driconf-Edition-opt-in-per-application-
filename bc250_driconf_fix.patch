@@ -1,0 +1,199 @@
+diff --git a/src/amd/common/ac_gpu_info.c b/src/amd/common/ac_gpu_info.c
+index 68b63a7..ae0a191 100644
+--- a/src/amd/common/ac_gpu_info.c
++++ b/src/amd/common/ac_gpu_info.c
+@@ -596,8 +596,9 @@ ac_fill_memory_info(struct radeon_info *info, const struct drm_amdgpu_info_devic
+ }
+ 
+ bool
+-ac_identify_chip(struct radeon_info *info, const struct drm_amdgpu_info_device *device_info)
++ac_identify_chip(struct radeon_info *info, const struct drm_amdgpu_info_device *device_info, bool spoof_gfx1013_as_gfx10_3)
+ {
++
+    /* Set chip identification. */
+    info->pci_id = device_info->device_id;
+    info->pci_rev_id = device_info->pci_rev;
+@@ -730,6 +731,9 @@ ac_identify_chip(struct radeon_info *info, const struct drm_amdgpu_info_device *
+       return false;
+    }
+ 
++   if (info->family == CHIP_GFX1013 && spoof_gfx1013_as_gfx10_3)
++      info->gfx_level = GFX10_3;
++
+ 
+ #define VCN_IP_VERSION(mj, mn, rv) (((mj) << 16) | ((mn) << 8) | (rv))
+ 
+@@ -1378,8 +1382,9 @@ void ac_fill_tess_info(struct radeon_info *info)
+ 
+ enum ac_query_gpu_info_result
+ ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info,
+-                  bool require_pci_bus_info)
++                  bool require_pci_bus_info, bool spoof_gfx1013_as_gfx10_3)
+ {
++
+    struct amdgpu_gpu_info amdinfo;
+    struct drm_amdgpu_info_device device_info = {0};
+    uint32_t vidip_fw_version = 0, vidip_fw_feature = 0;
+@@ -1528,7 +1533,7 @@ ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info,
+    ac_drm_query_video_caps_info(dev, AMDGPU_INFO_VIDEO_CAPS_ENCODE,
+                                 sizeof(info->enc_caps), &(info->enc_caps));
+ 
+-   if (!ac_identify_chip(info, &device_info))
++   if (!ac_identify_chip(info, &device_info, spoof_gfx1013_as_gfx10_3))
+       return AC_QUERY_GPU_INFO_UNIMPLEMENTED_HW;
+ 
+    const char *marketing_name = ac_drm_get_marketing_name(dev);
+diff --git a/src/amd/common/ac_gpu_info.h b/src/amd/common/ac_gpu_info.h
+index c59ae45..60854e3 100644
+--- a/src/amd/common/ac_gpu_info.h
++++ b/src/amd/common/ac_gpu_info.h
+@@ -487,7 +487,8 @@ enum ac_query_gpu_info_result {
+ };
+ 
+ enum ac_query_gpu_info_result ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info,
+-                                                bool require_pci_bus_info);
++                                                bool require_pci_bus_info, bool spoof_gfx1013_as_gfx10_3);
++
+ void ac_fill_compiler_info(struct radeon_info *info, const struct drm_amdgpu_info_device *device_info);
+ void ac_fill_tiling_info(struct radeon_info *info, const struct amdgpu_gpu_info *amdinfo);
+ void ac_fill_memory_info(struct radeon_info *info, const struct drm_amdgpu_info_device *device_info,
+@@ -496,7 +497,7 @@ bool
+ ac_fill_hw_ip_info(struct radeon_info *info, const struct drm_amdgpu_info_device *device_info,
+                    unsigned ip_type, const struct drm_amdgpu_info_hw_ip *ip_info);
+ bool
+-ac_identify_chip(struct radeon_info *info, const struct drm_amdgpu_info_device *device_info);
++ac_identify_chip(struct radeon_info *info, const struct drm_amdgpu_info_device *device_info, bool spoof_gfx1013_as_gfx10_3);
+ void ac_fill_bug_info(struct radeon_info *info);
+ void ac_fill_feature_info(struct radeon_info *info, const struct drm_amdgpu_info_device *device_info);
+ void ac_fill_hw_info(struct radeon_info *info, const struct drm_amdgpu_info_device *device_info);
+diff --git a/src/amd/vulkan/radv_instance.c b/src/amd/vulkan/radv_instance.c
+index 0babb75..c4e040e 100644
+--- a/src/amd/vulkan/radv_instance.c
++++ b/src/amd/vulkan/radv_instance.c
+@@ -208,6 +208,7 @@ static const driOptionDescription radv_dri_options[] = {
+       DRI_CONF_RADV_DISABLE_SINKING_LOAD_INPUT_FS(false)
+       DRI_CONF_RADV_FLUSH_BEFORE_QUERY_COPY(false)
+       DRI_CONF_RADV_ENABLE_UNIFIED_HEAP_ON_APU(false)
++      DRI_CONF_RADV_SPOOF_GFX1013_AS_GFX10_3(false)
+       DRI_CONF_RADV_TEX_NON_UNIFORM(false)
+       DRI_CONF_RADV_FLUSH_BEFORE_TIMESTAMP_WRITE(false)
+       DRI_CONF_RADV_RT_WAVE64(false)
+@@ -280,6 +281,7 @@ radv_init_dri_performance_options(struct radv_instance *instance)
+ 
+    drirc->performance.disable_ngg_gs = driQueryOptionb(&drirc->options, "radv_disable_ngg_gs");
+    drirc->performance.enable_unified_heap_on_apu = driQueryOptionb(&drirc->options, "radv_enable_unified_heap_on_apu");
++   drirc->performance.spoof_gfx1013_as_gfx10_3 = driQueryOptionb(&drirc->options, "radv_spoof_gfx1013_as_gfx10_3");   
+    drirc->performance.report_llvm9_version_string =
+       driQueryOptionb(&drirc->options, "radv_report_llvm9_version_string");
+    drirc->performance.gfx12_hiz_wa = driQueryOptionstr(&drirc->options, "radv_gfx12_hiz_wa");
+diff --git a/src/amd/vulkan/radv_instance.h b/src/amd/vulkan/radv_instance.h
+index 8586e45..ba71687 100644
+--- a/src/amd/vulkan/radv_instance.h
++++ b/src/amd/vulkan/radv_instance.h
+@@ -69,6 +69,7 @@ struct radv_drirc {
+    struct {
+       bool disable_ngg_gs;
+       bool enable_unified_heap_on_apu;
++      bool spoof_gfx1013_as_gfx10_3;
+       bool report_llvm9_version_string;
+       bool prefer_2d_swizzle_for_3d_storage;
+       char *gfx12_hiz_wa;
+diff --git a/src/amd/vulkan/radv_physical_device.c b/src/amd/vulkan/radv_physical_device.c
+index cdab81e..ee13359 100644
+--- a/src/amd/vulkan/radv_physical_device.c
++++ b/src/amd/vulkan/radv_physical_device.c
+@@ -70,7 +70,9 @@ radv_taskmesh_enabled(const struct radv_physical_device *pdev)
+    if (instance->debug_flags & RADV_DEBUG_NO_MESH_SHADER)
+       return false;
+ 
+-   return pdev->use_ngg && !pdev->use_llvm && pdev->info.gfx_level >= GFX10_3 && radv_compute_queue_enabled(pdev);
++   return pdev->use_ngg && !pdev->use_llvm &&
++          (pdev->info.gfx_level >= GFX10_3 || (pdev->info.family == CHIP_GFX1013 && instance->drirc.performance.spoof_gfx1013_as_gfx10_3)) &&
++          (radv_compute_queue_enabled(pdev) || (pdev->info.family == CHIP_GFX1013 && instance->drirc.performance.spoof_gfx1013_as_gfx10_3));
+ }
+ 
+ bool
+@@ -2434,7 +2436,8 @@ radv_physical_device_try_create(struct radv_instance *instance, drmDevicePtr drm
+    }
+ 
+    if (drm_device) {
+-      result = radv_amdgpu_winsys_create(fd, instance->debug_flags, instance->perftest_flags, is_virtio, &pdev->ws);
++      result = radv_amdgpu_winsys_create(fd, instance->debug_flags, instance->perftest_flags, is_virtio,
++                                          instance->drirc.performance.spoof_gfx1013_as_gfx10_3, &pdev->ws);
+ 
+       if (result != VK_SUCCESS) {
+          result = vk_errorf(instance, result, "failed to initialize winsys");
+@@ -2554,7 +2557,7 @@ radv_physical_device_try_create(struct radv_instance *instance, drmDevicePtr drm
+ 
+    pdev->emulate_ngg_gs_query_pipeline_stat = pdev->use_ngg && pdev->info.gfx_level < GFX11;
+ 
+-   pdev->emulate_mesh_shader_queries = pdev->info.gfx_level == GFX10_3;
++  pdev->emulate_mesh_shader_queries = pdev->info.gfx_level == GFX10_3 || (pdev->info.family == CHIP_GFX1013 && instance->drirc.performance.spoof_gfx1013_as_gfx10_3);
+ 
+    /* Determine the number of threads per wave for all stages. */
+    pdev->cs_wave_size = 64;
+diff --git a/src/amd/vulkan/radv_query.c b/src/amd/vulkan/radv_query.c
+index 5308ba8..a4953f9 100644
+--- a/src/amd/vulkan/radv_query.c
++++ b/src/amd/vulkan/radv_query.c
+@@ -410,8 +410,10 @@ radv_get_pipelinestat_query_size(struct radv_device *device)
+     * invocations, it's easier to use the same size as GFX11.
+     */
+    const struct radv_physical_device *pdev = radv_device_physical(device);
+-   unsigned num_results = pdev->info.gfx_level >= GFX10_3 ? 14 : 11;
++   const struct radv_instance *instance = radv_physical_device_instance(pdev);
++   unsigned num_results = pdev->info.gfx_level >= GFX10_3 || (pdev->info.family == CHIP_GFX1013 && instance->drirc.performance.spoof_gfx1013_as_gfx10_3) ? 14 : 11;
+    return num_results * 8;
++
+ }
+ 
+ static nir_shader *
+diff --git a/src/amd/vulkan/winsys/amdgpu/radv_amdgpu_winsys.c b/src/amd/vulkan/winsys/amdgpu/radv_amdgpu_winsys.c
+index 438b434..3b3ab73 100644
+--- a/src/amd/vulkan/winsys/amdgpu/radv_amdgpu_winsys.c
++++ b/src/amd/vulkan/winsys/amdgpu/radv_amdgpu_winsys.c
+@@ -197,7 +197,7 @@ radv_amdgpu_winsys_filter_perftest_flags(uint64_t perftest_flags)
+ 
+ VkResult
+ radv_amdgpu_winsys_create(int fd, uint64_t debug_flags, uint64_t perftest_flags, bool is_virtio,
+-                          struct radeon_winsys **winsys)
++                          bool spoof_gfx1013_as_gfx10_3, struct radeon_winsys **winsys)
+ {
+    VkResult result = VK_SUCCESS;
+ 
+@@ -269,7 +269,7 @@ radv_amdgpu_winsys_create(int fd, uint64_t debug_flags, uint64_t perftest_flags,
+    ws->info.drm_minor = drm_minor;
+    ws->info.is_virtio = is_virtio;
+ 
+-   enum ac_query_gpu_info_result info_result = ac_query_gpu_info(fd, ws->dev, &ws->info, true);
++   enum ac_query_gpu_info_result info_result = ac_query_gpu_info(fd, ws->dev, &ws->info, true, spoof_gfx1013_as_gfx10_3);
+    if (info_result != AC_QUERY_GPU_INFO_SUCCESS) {
+       result = info_result == AC_QUERY_GPU_INFO_FAIL ? VK_ERROR_INITIALIZATION_FAILED : VK_ERROR_INCOMPATIBLE_DRIVER;
+       goto winsys_fail;
+diff --git a/src/amd/vulkan/winsys/amdgpu/radv_amdgpu_winsys_public.h b/src/amd/vulkan/winsys/amdgpu/radv_amdgpu_winsys_public.h
+index 79d914c..fbf1c24 100644
+--- a/src/amd/vulkan/winsys/amdgpu/radv_amdgpu_winsys_public.h
++++ b/src/amd/vulkan/winsys/amdgpu/radv_amdgpu_winsys_public.h
+@@ -13,6 +13,6 @@
+ #define RADV_AMDGPU_WINSYS_PUBLIC_H
+ 
+ VkResult radv_amdgpu_winsys_create(int fd, uint64_t debug_flags, uint64_t perftest_flags, bool is_virtio,
+-                                   struct radeon_winsys **winsys);
++                                   bool spoof_gfx1013_as_gfx10_3, struct radeon_winsys **winsys);
+ 
+ #endif /* RADV_AMDGPU_WINSYS_PUBLIC_H */
+diff --git a/src/util/driconf.h b/src/util/driconf.h
+index a368aee..fce4814 100644
+--- a/src/util/driconf.h
++++ b/src/util/driconf.h
+@@ -808,6 +808,10 @@
+    DRI_CONF_OPT_B(radv_enable_unified_heap_on_apu, def, \
+                   "Enable an unified heap with DEVICE_LOCAL on integrated GPUs")
+ 
++#define DRI_CONF_RADV_SPOOF_GFX1013_AS_GFX10_3(def) \
++   DRI_CONF_OPT_B(radv_spoof_gfx1013_as_gfx10_3, def, \
++                  "Report GFX1013 (BC-250) as GFX10_3 to enable mesh shaders")
++
+ #define DRI_CONF_RADV_TEX_NON_UNIFORM(def) \
+    DRI_CONF_OPT_B(radv_tex_non_uniform, def, \
+                   "Always mark texture sample operations as non-uniform.")

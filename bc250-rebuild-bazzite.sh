@@ -43,7 +43,8 @@ fi
 # 2. Install dependencies inside the container
 echo "[2/7] Installing build dependencies inside the container..."
 distrobox enter "$CONTAINER_NAME" -- sudo pacman -Sy --needed --noconfirm \
-    base-devel git python-mako python-yaml python-packaging ninja meson vulkan-headers glslang
+    base-devel git python-mako python-yaml python-packaging ninja meson vulkan-headers glslang \
+    libxrandr libxcb libx11 libxext libxshmfence wayland wayland-protocols
 
 # 3. Back up the currently installed driver, if any
 if [ -f "$DRIVER_OUT" ]; then

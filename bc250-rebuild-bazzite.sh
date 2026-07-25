@@ -62,10 +62,10 @@ rm -rf "$MESA_DIR"
 distrobox enter "$CONTAINER_NAME" -- git clone --depth 1 --branch "$MESA_TAG" \
     https://gitlab.freedesktop.org/mesa/mesa.git "$MESA_DIR"
 
-# 5. Apply the patch
+# 5. Apply the patch (run inside the container, since Bazzite's host
+#    image may not include the `patch` utility at all)
 echo "[5/7] Applying BC-250 driconf patch..."
-cd "$MESA_DIR"
-if ! patch -p1 --fuzz=5 -i "$PATCH_FILE"; then
+if ! distrobox enter "$CONTAINER_NAME" -- bash -c "cd '$MESA_DIR' && patch -p1 --fuzz=5 -i '$PATCH_FILE'"; then
     echo ""
     echo "!!! PATCH FAILED TO APPLY CLEANLY !!!"
     echo "Check the .rej files in $MESA_DIR. Aborting - not building from"
@@ -73,7 +73,7 @@ if ! patch -p1 --fuzz=5 -i "$PATCH_FILE"; then
     exit 1
 fi
 
-if ! grep -q "spoof_gfx1013_as_gfx10_3" src/amd/vulkan/radv_physical_device.c; then
+if ! grep -q "spoof_gfx1013_as_gfx10_3" "$MESA_DIR/src/amd/vulkan/radv_physical_device.c"; then
     echo ""
     echo "!!! PATCH APPLIED BUT KEY MARKER NOT FOUND - ABORTING !!!"
     exit 1

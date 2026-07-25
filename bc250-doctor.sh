@@ -104,14 +104,28 @@ EOF
 fi
 
 # 4. Does the driver actually load and respond to Vulkan queries?
+RUNTIME_LIBS_DIR="$HOME/.local/lib/bc250-runtime-libs"
 check "driver loads correctly (vulkaninfo test)"
 if VK_ICD_FILENAMES="$ICD_OUT" vulkaninfo --summary >/tmp/bc250_vulkaninfo_test.log 2>&1; then
     ok
+elif [ -d "$RUNTIME_LIBS_DIR" ] && LD_LIBRARY_PATH="$RUNTIME_LIBS_DIR" VK_ICD_FILENAMES="$ICD_OUT" vulkaninfo --summary >/tmp/bc250_vulkaninfo_test.log 2>&1; then
+    problem "Driver only loads with LD_LIBRARY_PATH set"
+    echo "    -> Your Steam launch options need to include:"
+    echo "       LD_LIBRARY_PATH=$RUNTIME_LIBS_DIR VK_ICD_FILENAMES=$ICD_OUT %command%"
+    echo ""
 else
     problem "vulkaninfo failed to run with this driver"
     echo "    -> Full error saved to /tmp/bc250_vulkaninfo_test.log"
-    echo "    -> First few lines of the error:"
-    head -10 /tmp/bc250_vulkaninfo_test.log | sed 's/^/       /'
+    if grep -q "cannot open shared object file" /tmp/bc250_vulkaninfo_test.log; then
+        MISSING_LIB=$(grep "cannot open shared object" /tmp/bc250_vulkaninfo_test.log | head -1 | awk '{print $1}')
+        echo "    -> Missing library: $MISSING_LIB"
+        echo "    -> Try re-running bc250-rebuild-bazzite.sh - it now copies"
+        echo "       missing runtime libraries automatically. If this still"
+        echo "       happens after that, open an issue on the GitHub repo."
+    else
+        echo "    -> First few lines of the error:"
+        head -10 /tmp/bc250_vulkaninfo_test.log | sed 's/^/       /'
+    fi
     echo ""
 fi
 

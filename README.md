@@ -43,14 +43,49 @@ Linux container image, which takes a few extra minutes.
 
 ---
 
-## Step 1: Download the files from this repo
+## Step 1: Give Steam permission to see the driver files (if needed)
+
+On some Bazzite setups, Steam runs as a "Flatpak" app, which is
+sandboxed and might not be able to see files outside its own
+restricted folder by default - including the driver files this guide
+has you create. If your Steam isn't a Flatpak, you can skip this
+step entirely.
+
+**Check if this applies to you:**
+```bash
+flatpak list | grep -i steam
+```
+If that prints nothing, skip to Step 2 - this doesn't apply to your
+setup.
+
+If it does show Steam, install Flatseal (a permissions manager) if
+you don't have it already:
+
+```bash
+flatpak install flathub com.github.tchx84.Flatseal
+```
+
+**Then, using only your mouse:**
+1. Open **Flatseal**
+2. Click **Steam** in the list on the left
+3. Scroll down to the **Filesystem** section
+4. Turn on **"All user files"** (sometimes labeled "Home")
+5. Fully quit Steam - right-click its icon in the taskbar/system tray
+   and choose Quit or Exit (just closing the window isn't enough)
+6. Reopen Steam
+
+You only need to do this once.
+
+---
+
+## Step 2: Download the files from this repo
 
 Download these two files to the same folder (e.g. your Downloads
 folder):
 - `bc250_driconf_fix.patch`
 - `bc250-rebuild-bazzite.sh`
 
-## Step 2: Run the build script
+## Step 3: Run the build script
 
 ```bash
 cd ~/Downloads
@@ -75,7 +110,7 @@ clearly what went wrong, rather than leaving you with a broken setup.
 
 ---
 
-## Step 3: Turn the feature on for your game
+## Step 4: Turn the feature on for your game
 
 By default, the new driver does nothing different for any game -
 you have to explicitly tell it which game(s) should get the mesh
@@ -103,15 +138,27 @@ to start their actual process after you click Play in Steam.
 
 ---
 
-## Step 4: Set the launch option in Steam
+## Step 5: Set the launch option in Steam
 
 Right-click the game in your Steam library, Properties, General, find
-the Launch Options box, and paste this exact line (replace `USERNAME`
-with your actual username - check by running `whoami` in a terminal):
+the Launch Options box.
+
+**The build script tells you exactly what to paste here at the end of
+Step 3** - copy that line exactly. It'll be one of these two forms,
+depending on your system:
 
 ```
 VK_ICD_FILENAMES=/home/USERNAME/radeon_driconf_icd.x86_64.json %command%
 ```
+
+or, if some runtime libraries weren't already on your system:
+
+```
+LD_LIBRARY_PATH=/home/USERNAME/.local/lib/bc250-runtime-libs VK_ICD_FILENAMES=/home/USERNAME/radeon_driconf_icd.x86_64.json %command%
+```
+
+(replace `USERNAME` with your actual username - check by running
+`whoami` in a terminal)
 
 Launch the game normally from Steam.
 
@@ -136,7 +183,7 @@ EOF
 ```
 
 **Log out and log back in** (a full session restart, not just closing
-Steam) for this to take effect. After that, you can skip Step 4
+Steam) for this to take effect. After that, you can skip Step 5
 entirely - no launch option needed for any game.
 
 Since the driconf patch only activates for games listed in
@@ -179,6 +226,23 @@ container. To stop using the patched driver:
   ```
 
 Your system goes back to exactly how it was before.
+
+---
+
+## Game shows a fatal error / crashes on launch even after setup
+
+**Run the diagnostic script first** - it checks every piece of the
+setup automatically and fixes what it can:
+
+```bash
+chmod +x ~/Downloads/bc250-doctor.sh
+bash ~/Downloads/bc250-doctor.sh
+```
+
+It'll tell you exactly what's wrong (if anything) and fix simple
+problems automatically. If everything passes but the game still
+doesn't work, it'll show you exactly what to include when asking for
+help.
 
 ---
 

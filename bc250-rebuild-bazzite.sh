@@ -102,7 +102,7 @@ if [ ! -f "$MESA_DIR/build/src/amd/vulkan/libvulkan_radeon.so" ]; then
 fi
 
 # 7. Install to $HOME (NOT /usr/lib - that's read-only on Bazzite)
-echo "[7/7] Installing driver to $DRIVER_OUT (not /usr/lib - Bazzite's"
+echo "[7/8] Installing driver to $DRIVER_OUT (not /usr/lib - Bazzite's"
 echo "system files are read-only, so we keep everything under your home"
 echo "folder instead)..."
 cp "$MESA_DIR/build/src/amd/vulkan/libvulkan_radeon.so" "$DRIVER_OUT"
@@ -117,14 +117,61 @@ cat > "$ICD_OUT" << EOF
 }
 EOF
 
+# 8. Copy any runtime libraries the driver needs that the Bazzite host
+#    doesn't have, out of the build container. The container has a full
+#    Arch install with everything the driver was built against, but the
+#    Bazzite host is minimal by design - some runtime (not build-time)
+#    dependencies may only exist inside the container. Rather than guess
+#    which ones, check what's actually missing and copy exactly those.
+echo "[8/8] Checking for runtime libraries missing on the host..."
+RUNTIME_LIBS_DIR="$HOME/.local/lib/bc250-runtime-libs"
+mkdir -p "$RUNTIME_LIBS_DIR"
+
+MISSING_LIBS=$(distrobox enter "$CONTAINER_NAME" -- ldd "$DRIVER_OUT" 2>/dev/null | grep "not found" | awk '{print $1}')
+
+if [ -n "$MISSING_LIBS" ]; then
+    echo "Found missing runtime libraries, copying from build container:"
+    for lib in $MISSING_LIBS; do
+        LIB_PATH=$(distrobox enter "$CONTAINER_NAME" -- find /usr/lib /usr/lib64 -iname "$lib" 2>/dev/null | head -1)
+        if [ -n "$LIB_PATH" ]; then
+            echo "  - $lib"
+            distrobox enter "$CONTAINER_NAME" -- cp "$LIB_PATH" "$RUNTIME_LIBS_DIR/"
+        else
+            echo "  - $lib (WARNING: couldn't find this even inside the container)"
+        fi
+    done
+    NEEDS_LD_PATH=1
+else
+    echo "No missing runtime libraries found - the Bazzite host already has everything needed."
+    NEEDS_LD_PATH=0
+fi
+
 echo ""
 echo "Verifying driver loads correctly..."
-if VK_ICD_FILENAMES="$ICD_OUT" vulkaninfo --summary >/dev/null 2>&1; then
+if [ "$NEEDS_LD_PATH" -eq 1 ]; then
+    VERIFY_CMD="LD_LIBRARY_PATH=$RUNTIME_LIBS_DIR VK_ICD_FILENAMES=$ICD_OUT vulkaninfo --summary"
+else
+    VERIFY_CMD="VK_ICD_FILENAMES=$ICD_OUT vulkaninfo --summary"
+fi
+
+if eval "$VERIFY_CMD" >/dev/null 2>&1; then
     echo ""
     echo "=== Success ==="
     echo "Driver built against $MESA_TAG, installed at: $DRIVER_OUT"
     echo "ICD file: $ICD_OUT"
     echo ""
+    if [ "$NEEDS_LD_PATH" -eq 1 ]; then
+        echo "IMPORTANT: your Steam launch options need one extra piece this time,"
+        echo "since some runtime libraries weren't already on your system:"
+        echo ""
+        echo "  LD_LIBRARY_PATH=$RUNTIME_LIBS_DIR VK_ICD_FILENAMES=$ICD_OUT %command%"
+        echo ""
+    else
+        echo "Your Steam launch options:"
+        echo ""
+        echo "  VK_ICD_FILENAMES=$ICD_OUT %command%"
+        echo ""
+    fi
     echo "Remember: mesh shaders only activate for apps listed in ~/.drirc"
     echo "(use bc250-add-game.sh to add a game)."
 else

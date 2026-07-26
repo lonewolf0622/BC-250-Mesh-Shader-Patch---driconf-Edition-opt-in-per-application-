@@ -82,7 +82,7 @@ PYTHONPATH="$VENV/lib/python3"*/site-packages "$VENV/bin/meson" setup build \
   -Dvulkan-drivers=amd -Dgallium-drivers=zink \
   -Dglx=disabled -Degl=disabled -Dgles2=disabled \
   -Dshared-llvm=disabled -Dllvm=disabled \
-  -Dxmlconfig=disabled -Dlmsensors=disabled -Dvalgrind=disabled
+  -Dxmlconfig=enabled -Dlmsensors=disabled -Dvalgrind=disabled
 
 PYTHONPATH="$VENV/lib/python3"*/site-packages ninja -C build src/amd/vulkan/libvulkan_radeon.so
 

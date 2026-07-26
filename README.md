@@ -1,4 +1,4 @@
-# BC-250 Mesh Shader Patch (driconf version)
+# BC-250 Mesh Shader Patch - CachyOS Edition
 
 ## What is this?
 
@@ -9,17 +9,14 @@ to launch on a BC-250.
 
 Your BC-250's hardware can actually do mesh shaders - the graphics
 driver (Mesa) just doesn't have that feature turned on for this chip
-by default. This patch turns it on.
-
-**This version only turns the feature on for specific games you
-choose** (like FF7 Rebirth), not for your whole system. That makes it
-safe to install as your everyday driver.
+by default. This patch turns it on, only for the specific games you
+choose (not your whole system) - so it's safe to install as your
+everyday driver.
 
 **Helper scripts included in this repo:**
-- `bc250-add-game.sh` - easily add a new game to the fix (see Step 6)
-- `bc250-rebuild.sh` - rebuild everything automatically after a Mesa
-  update breaks things (see "If a system update breaks this later" at
-  the bottom)
+- `bc250-rebuild.sh` - builds/rebuilds everything automatically
+- `bc250-add-game.sh` - easily add a new game to the fix
+- `bc250-doctor.sh` - checks your setup and fixes common problems
 
 ---
 
@@ -30,119 +27,59 @@ exactly as written, one at a time, and press Enter after each one.
 If a command asks for your password, type it and press Enter (the
 password won't show as you type - that's normal, not a bug).
 
-**If your terminal uses `fish` shell** (CachyOS and some other distros
-default to this), some of the commands below won't work as-is - fish
-uses different syntax for variables. To avoid this entirely, type
-`bash` first and press Enter before starting any of the steps below:
+**If your terminal uses `fish` shell** (some distros default to this),
+some commands below won't work as-is - fish uses different syntax for
+variables. To avoid this entirely, type `bash` first and press Enter
+before starting any of the steps below:
 
 ```bash
 bash
 ```
 
 You'll know it worked if your prompt changes slightly. Everything
-after that will run in bash instead, and every command in this guide
-will work exactly as written. (If you're not sure which shell you
-have, just run `bash` anyway - it's harmless even if you didn't need
-it.)
+after that will run in bash instead.
 
 This whole process takes 20-40 minutes, mostly waiting for one long
 step (the build).
 
 ---
 
-## Step 1: Install the tools needed to build this
+## Step 1: Download the files from this repo
+
+Download these two files to the same folder (e.g. your Downloads
+folder):
+- `bc250_driconf_fix.patch`
+- `bc250-rebuild.sh`
+
+## Step 2: Run the build script
 
 ```bash
-sudo pacman -S --needed git python-mako python-yaml ninja base-devel
+cd ~/Downloads
+chmod +x bc250-rebuild.sh
+bash bc250-rebuild.sh
 ```
+
+That's genuinely it - one command. The script will:
+1. Install any build tools you're missing
+2. Back up your existing driver, if you have one from before
+3. Download Mesa's source code
+4. Apply the patch
+5. Build the driver (the long step - just wait)
+6. Install it and double-check everything actually worked before
+   finishing
+
+If anything fails partway through, the script will stop and tell you
+clearly what went wrong, rather than leaving you with a broken setup.
 
 ---
 
-## Step 2: Download Mesa's source code
+## Step 3: Turn the feature on for your game
 
-```bash
-mkdir -p ~/bc250-mesa-build && cd ~/bc250-mesa-build
-git clone --depth 1 --branch mesa-26.1.4 https://gitlab.freedesktop.org/mesa/mesa.git mesa
-cd mesa
-```
+By default, the new driver does nothing different for any game - you
+have to explicitly tell it which game(s) should get the mesh shader
+fix.
 
-## Step 3: Apply the patch
-
-Download `bc250_driconf_fix.patch` from this repo first, then:
-
-```bash
-patch -p1 --fuzz=5 -i ~/Downloads/bc250_driconf_fix.patch
-```
-
-**What you should see:** three lines saying `patching file ...`
-with no errors. If you see the word `FAILED` anywhere, stop here and
-ask for help in the community Discord/GitHub issues - don't continue
-to the next step.
-
-## Step 4: Build it
-
-This is the long step. Just let it run.
-
-```bash
-python3 -m venv venv
-venv/bin/pip install meson
-```
-
-```bash
-VENV="$HOME/bc250-mesa-build/mesa/venv"
-PYTHONPATH="$VENV/lib/python3"*/site-packages "$VENV/bin/meson" setup build \
-  -Dvulkan-drivers=amd -Dgallium-drivers=zink \
-  -Dglx=disabled -Degl=disabled -Dgles2=disabled \
-  -Dshared-llvm=disabled -Dllvm=disabled \
-  -Dxmlconfig=disabled -Dlmsensors=disabled -Dvalgrind=disabled
-```
-
-```bash
-PYTHONPATH="$VENV/lib/python3"*/site-packages ninja -C build src/amd/vulkan/libvulkan_radeon.so
-```
-
-This can take 10-30 minutes depending on your hardware. It's normal
-for there to be no visible progress for stretches of time - just
-wait for it to finish and return you to the command prompt.
-
----
-
-## Step 5: Install the driver
-
-This copies the new driver next to your existing one, **without
-replacing anything** - your system's original driver stays exactly
-as it was, completely unaffected.
-
-```bash
-sudo cp build/src/amd/vulkan/libvulkan_radeon.so /usr/lib/libvulkan_radeon_driconf.so
-```
-
-Create a small config file that tells Steam where to find the new
-driver:
-
-```bash
-cat > ~/radeon_driconf_icd.x86_64.json << 'EOF'
-{
-  "file_format_version": "1.0.0",
-  "ICD": {
-    "library_path": "/usr/lib/libvulkan_radeon_driconf.so",
-    "api_version": "1.4.309"
-  }
-}
-EOF
-```
-
----
-
-## Step 6: Turn the feature on for your specific game
-
-By default, the new driver does nothing different for any game -
-you have to explicitly tell it which game(s) should get the mesh
-shader fix.
-
-**Easiest way - use the helper script:**
-
-Download `bc250-add-game.sh` from this repo, then:
+Download `bc250-add-game.sh` from this repo too, then:
 
 ```bash
 chmod +x ~/Downloads/bc250-add-game.sh
@@ -151,58 +88,25 @@ bash ~/Downloads/bc250-add-game.sh
 
 It'll ask you to launch your game, show you a list of running games
 to pick from, and set everything up automatically - no manual file
-editing needed. Run it again any time you want to add another game.
+editing needed.
 
-**Manual way (if you prefer, or the script doesn't work for you):**
-
-Create a file called `.drirc` in your home folder:
-
-```bash
-cat > ~/.drirc << 'EOF'
-<driconf>
-    <device>
-        <application name="FF7 Rebirth" executable="ff7rebirth_.exe">
-            <option name="radv_spoof_gfx1013_as_gfx10_3" value="true" />
-        </application>
-    </device>
-</driconf>
-EOF
-```
-
-If you're setting this up for a different game, you need that
-game's exact executable name. Launch the game once (it's OK if it
-fails to start), then in a terminal run:
-
-```bash
-for pid in $(pgrep -i "keyword_from_game_name"); do
-  echo "PID $pid: $(cat /proc/$pid/comm)"
-done
-```
-
-Replace `keyword_from_game_name` with something like `ff7` or part of
-the game's name. Whatever name it prints is what goes in the
-`executable="..."` part above. Note: this is sometimes slightly
-different from the actual file name (for FF7 Rebirth it has an extra
-underscore: `ff7rebirth_.exe`, not `ff7rebirth.exe`).
-
-To add a second game later, just run the script again, or add another
-`<application>...</application>` block inside the same `<device>`
-section if editing manually.
+**To add another game later**, just run the script again - it'll add
+the new game alongside any you've already configured, without
+removing them.
 
 ---
 
-## Step 7: Set the launch option in Steam
+## Step 4: Set the launch option in Steam
 
-Right-click the game in your Steam library → **Properties** →
-**General** → find the **Launch Options** box, and paste this exact
-line (replace `deck` with your actual username if it's different -
-check by running `whoami` in a terminal):
+Right-click the game in your Steam library, Properties, General, find
+the Launch Options box, and paste this exact line (replace `USERNAME`
+with your actual username - check by running `whoami` in a terminal):
 
 ```
-VK_ICD_FILENAMES=/home/deck/radeon_driconf_icd.x86_64.json %command%
+VK_ICD_FILENAMES=/home/USERNAME/radeon_driconf_icd.x86_64.json %command%
 ```
 
-That's it. Launch the game normally from Steam.
+Launch the game normally from Steam.
 
 ---
 
@@ -221,16 +125,8 @@ EOF
 ```
 
 **Log out and log back in** (a full session restart, not just closing
-Steam) for this to take effect. After that, you can skip Step 7
+Steam) for this to take effect. After that, you can skip Step 4
 entirely for any game you set up.
-
-Since the driconf patch only activates for games listed in `~/.drirc`
-anyway, this is just as safe as the launch-option approach - it
-doesn't force the spoof on for everything, it just makes the *driver
-itself* available everywhere, while `~/.drirc` still controls which
-games actually use the feature. This also avoids touching your
-system's actual driver file at all, unlike replacing
-`/usr/lib/libvulkan_radeon.so` directly.
 
 **To undo this later:**
 ```bash
@@ -242,92 +138,81 @@ Then log out and back in again.
 
 ## How do I know it worked?
 
-Run this in a terminal:
+Run the diagnostic script:
 
+```bash
+chmod +x ~/Downloads/bc250-doctor.sh
+bash ~/Downloads/bc250-doctor.sh
+```
+
+It checks everything automatically and tells you exactly what's
+wrong (if anything), fixing simple problems on its own.
+
+Or check manually:
 ```bash
 VK_ICD_FILENAMES=~/radeon_driconf_icd.x86_64.json vulkaninfo | grep -i "meshShader ="
 ```
-
-You should see `meshShader = true` appear.
+This should show `false` normally, and `true` only when run as a game
+you've configured in `~/.drirc`.
 
 ---
 
 ## Something went wrong - how do I undo this?
 
-Nothing about this process modifies your original system driver, so
-there's nothing to "undo" at the system level. To stop using the
-patched driver:
+Nothing about this process replaces your system's actual default
+driver - it's installed alongside as a separate file. To stop using
+it:
 
-- **Remove the launch option** from Steam (delete the text you added
-  in Step 7), or
-- **Delete the files entirely:**
+- Remove the launch option from Steam, or
+- Delete everything:
   ```bash
   sudo rm /usr/lib/libvulkan_radeon_driconf.so
   rm ~/radeon_driconf_icd.x86_64.json
   rm ~/.drirc
   ```
 
-Your system will go back to behaving exactly as it did before you
-started.
+Your system goes back to exactly how it was before.
+
+---
+
+## If a system update breaks this later
+
+CachyOS updates packages regularly, and a future Mesa release could
+change things enough that this patch stops applying cleanly, or the
+driver stops working right.
+
+Just run the same script again - it automatically backs up your
+current driver first, rebuilds from scratch, and checks everything
+works before finishing:
+
+```bash
+bash ~/Downloads/bc250-rebuild.sh
+```
+
+To try a specific newer Mesa version:
+```bash
+bash ~/Downloads/bc250-rebuild.sh mesa-26.3.0
+```
+
+If the patch fails to apply after a Mesa update, the script will stop
+and tell you rather than installing something broken - please open an
+issue on this repo if that happens.
 
 ---
 
 ## Known issues
 
-- Async compute (a GPU performance feature) doesn't work on this chip
-  at all - this is a real hardware limitation, not something this
-  patch causes or can fix.
-- This has only been thoroughly tested with Final Fantasy VII
-  Rebirth. Other games requiring mesh shaders should work the same
-  way, but haven't all been individually verified.
+- Async compute is unavailable on this chip due to a genuine,
+  documented hardware bug (Mesa's own source has a comment noting
+  this) - not something this patch can fix.
+- Some other DX12 Ultimate features (hardware ray tracing, VRS) are
+  untested with this patch and may have their own issues.
+- This patch is specific to GFX1013 (BC-250) only - it has no effect
+  on any other GPU and is safe to use as a general daily driver.
 
 ## Questions or problems?
 
 Open an issue on this GitHub repo with:
 - What step you got stuck on
 - The exact error message or text you saw
-- The output of `vulkaninfo | grep -i "deviceName"` (confirms your
-  hardware is actually being recognized as the BC-250)
-
----
-
-## If a system update breaks this later
-
-CachyOS (and other rolling-release distros) update packages
-regularly, and a future Mesa release could change things enough that
-this patch stops applying cleanly, or the driver stops working right.
-
-**Download `bc250-rebuild.sh` from this repo** to rebuild everything
-automatically instead of repeating all the manual steps above:
-
-```bash
-chmod +x ~/Downloads/bc250-rebuild.sh
-```
-
-Put it in the same folder as `bc250_driconf_fix.patch`, then run:
-
-```bash
-bash ~/Downloads/bc250-rebuild.sh
-```
-
-This automatically:
-- Backs up your current driver first (so you can always go back)
-- Downloads a fresh copy of Mesa and applies the patch
-- Builds and installs the new driver
-- Checks everything actually worked before finishing - if anything
-  goes wrong partway through, it stops and tells you, instead of
-  leaving you with a broken driver
-
-If you want to try a specific newer Mesa version instead of the
-default one, run it like this:
-
-```bash
-bash ~/Downloads/bc250-rebuild.sh mesa-26.3.0
-```
-
-(replace `mesa-26.3.0` with whatever version you want to try)
-
-If the patch fails to apply after a Mesa update, the script will
-stop and tell you rather than installing something broken - in that
-case, please open an issue on this repo so the patch can be updated
-for the new Mesa version.
+- The output of `bash bc250-doctor.sh`

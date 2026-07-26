@@ -91,7 +91,7 @@ distrobox enter "$CONTAINER_NAME" -- bash -c "
       -Dvulkan-drivers=amd -Dgallium-drivers=zink \
       -Dglx=disabled -Degl=disabled -Dgles2=disabled \
       -Dshared-llvm=disabled -Dllvm=disabled \
-      -Dxmlconfig=disabled -Dlmsensors=disabled -Dvalgrind=disabled
+      -Dxmlconfig=enabled -Dlmsensors=disabled -Dvalgrind=disabled
     ninja -C build src/amd/vulkan/libvulkan_radeon.so
 "
 

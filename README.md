@@ -43,49 +43,14 @@ Linux container image, which takes a few extra minutes.
 
 ---
 
-## Step 1: Give Steam permission to see the driver files (if needed)
-
-On some Bazzite setups, Steam runs as a "Flatpak" app, which is
-sandboxed and might not be able to see files outside its own
-restricted folder by default - including the driver files this guide
-has you create. If your Steam isn't a Flatpak, you can skip this
-step entirely.
-
-**Check if this applies to you:**
-```bash
-flatpak list | grep -i steam
-```
-If that prints nothing, skip to Step 2 - this doesn't apply to your
-setup.
-
-If it does show Steam, install Flatseal (a permissions manager) if
-you don't have it already:
-
-```bash
-flatpak install flathub com.github.tchx84.Flatseal
-```
-
-**Then, using only your mouse:**
-1. Open **Flatseal**
-2. Click **Steam** in the list on the left
-3. Scroll down to the **Filesystem** section
-4. Turn on **"All user files"** (sometimes labeled "Home")
-5. Fully quit Steam - right-click its icon in the taskbar/system tray
-   and choose Quit or Exit (just closing the window isn't enough)
-6. Reopen Steam
-
-You only need to do this once.
-
----
-
-## Step 2: Download the files from this repo
+## Step 1: Download the files from this repo
 
 Download these two files to the same folder (e.g. your Downloads
 folder):
 - `bc250_driconf_fix.patch`
 - `bc250-rebuild-bazzite.sh`
 
-## Step 3: Run the build script
+## Step 2: Run the build script
 
 ```bash
 cd ~/Downloads
@@ -110,7 +75,7 @@ clearly what went wrong, rather than leaving you with a broken setup.
 
 ---
 
-## Step 4: Turn the feature on for your game
+## Step 3: Turn the feature on for your game
 
 By default, the new driver does nothing different for any game -
 you have to explicitly tell it which game(s) should get the mesh
@@ -138,7 +103,7 @@ to start their actual process after you click Play in Steam.
 
 ---
 
-## Step 5: Set the launch option in Steam
+## Step 4: Set the launch option in Steam
 
 Right-click the game in your Steam library, Properties, General, find
 the Launch Options box.
@@ -183,7 +148,7 @@ EOF
 ```
 
 **Log out and log back in** (a full session restart, not just closing
-Steam) for this to take effect. After that, you can skip Step 5
+Steam) for this to take effect. After that, you can skip Step 4
 entirely - no launch option needed for any game.
 
 Since the driconf patch only activates for games listed in
@@ -207,6 +172,47 @@ VK_ICD_FILENAMES=~/radeon_driconf_icd.x86_64.json vulkaninfo | grep -i "meshShad
 ```
 
 You should see `meshShader = true`.
+
+---
+
+## Already installed this before? Here's how to fix it cleanly
+
+An earlier version of this guide had a critical bug: the build was
+missing one setting (`xmlconfig=enabled`) that's required for the
+`.drirc` game-switching feature to actually work at all. If you set
+this up before and mesh shaders never seemed to turn on no matter
+what you tried, this was almost certainly why.
+
+**Good news: your existing setup isn't broken or dangerous, it just
+needs a clean rebuild.** Do this to fix it properly rather than
+patching over the old one:
+
+```bash
+# Remove the old build container and build folder entirely
+distrobox rm bc250-mesa-build -f
+rm -rf ~/bc250-mesa-build
+
+# Remove the old driver files (safe - nothing else depends on these)
+rm -f ~/.local/lib/libvulkan_radeon_driconf.so
+rm -rf ~/.local/lib/bc250-runtime-libs
+rm -f ~/radeon_driconf_icd.x86_64.json
+```
+
+Your `~/.drirc` file (if you already set one up) is fine and doesn't
+need to change - it was always correct, it just wasn't being read.
+Leave it as-is.
+
+Then just start fresh from **Step 1** of this guide (download the
+latest files, run the build script again). Make sure you're using the
+newest version of `bc250-rebuild-bazzite.sh` from this repo, not an
+older downloaded copy - check your Downloads folder for duplicates
+and delete any old ones first:
+
+```bash
+rm -f ~/Downloads/bc250-rebuild-bazzite.sh
+```
+
+Then download it fresh from this repo before re-running.
 
 ---
 

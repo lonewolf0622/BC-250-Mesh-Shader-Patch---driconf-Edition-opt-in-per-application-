@@ -127,7 +127,7 @@ echo "[8/8] Checking for runtime libraries missing on the host..."
 RUNTIME_LIBS_DIR="$HOME/.local/lib/bc250-runtime-libs"
 mkdir -p "$RUNTIME_LIBS_DIR"
 
-MISSING_LIBS=$(distrobox enter "$CONTAINER_NAME" -- ldd "$DRIVER_OUT" 2>/dev/null | grep "not found" | awk '{print $1}')
+MISSING_LIBS=$(ldd "$DRIVER_OUT" 2>/dev/null | grep "not found" | awk '{print $1}')
 
 if [ -n "$MISSING_LIBS" ]; then
     echo "Found missing runtime libraries, copying from build container:"

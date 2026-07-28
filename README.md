@@ -26,13 +26,19 @@ Grab these five files into the same folder (e.g. `~/Downloads`):
 - `bc250_driconf_fix.patch`
 - `bc250-steamos-prep.sh` ← the SteamOS wrapper
 
+These are pulled from the repo's **`Steam-OS`** branch:
+
 ```bash
 mkdir -p ~/Downloads && cd ~/Downloads
-curl -LO https://raw.githubusercontent.com/lonewolf0622/BC-250-Mesh-Shader-Patch---driconf-Edition-opt-in-per-application-/main/bc250-rebuild.sh
-curl -LO https://raw.githubusercontent.com/lonewolf0622/BC-250-Mesh-Shader-Patch---driconf-Edition-opt-in-per-application-/main/bc250-add-game.sh
-curl -LO https://raw.githubusercontent.com/lonewolf0622/BC-250-Mesh-Shader-Patch---driconf-Edition-opt-in-per-application-/main/bc250-doctor.sh
-curl -LO https://raw.githubusercontent.com/lonewolf0622/BC-250-Mesh-Shader-Patch---driconf-Edition-opt-in-per-application-/main/bc250_driconf_fix.patch
+curl -LO https://raw.githubusercontent.com/lonewolf0622/BC-250-Mesh-Shader-Patch---driconf-Edition-opt-in-per-application-/Steam-OS/bc250-rebuild.sh
+curl -LO https://raw.githubusercontent.com/lonewolf0622/BC-250-Mesh-Shader-Patch---driconf-Edition-opt-in-per-application-/Steam-OS/bc250-add-game.sh
+curl -LO https://raw.githubusercontent.com/lonewolf0622/BC-250-Mesh-Shader-Patch---driconf-Edition-opt-in-per-application-/Steam-OS/bc250-doctor.sh
+curl -LO https://raw.githubusercontent.com/lonewolf0622/BC-250-Mesh-Shader-Patch---driconf-Edition-opt-in-per-application-/Steam-OS/bc250_driconf_fix.patch
 ```
+
+> If any of these come back as a tiny file containing `404: Not Found` instead of the real script, check the exact file names on that branch at:
+> https://github.com/lonewolf0622/BC-250-Mesh-Shader-Patch---driconf-Edition-opt-in-per-application-/tree/Steam-OS
+> and adjust the filename in the URL above to match — branch contents can differ slightly from `main`.
 
 (Copy `bc250-steamos-prep.sh` into the same folder from wherever you saved it.)
 

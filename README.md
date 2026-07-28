@@ -147,6 +147,18 @@ VK_ICD_FILENAMES=$HOME/radeon_driconf_icd.x86_64.json
 EOF
 ```
 
+**If the rebuild script told you to add `LD_LIBRARY_PATH` to your
+launch options** (some systems are missing a runtime library the
+driver needs), include that here too instead:
+
+```bash
+mkdir -p ~/.config/environment.d
+cat > ~/.config/environment.d/bc250-mesh-shaders.conf << EOF
+VK_ICD_FILENAMES=$HOME/radeon_driconf_icd.x86_64.json
+LD_LIBRARY_PATH=$HOME/.local/lib/bc250-runtime-libs
+EOF
+```
+
 **Log out and log back in** (a full session restart, not just closing
 Steam) for this to take effect. After that, you can skip Step 4
 entirely - no launch option needed for any game.

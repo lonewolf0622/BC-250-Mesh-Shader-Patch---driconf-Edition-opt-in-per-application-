@@ -18,15 +18,19 @@ This whole process takes 20–40 minutes, mostly spent waiting on the Mesa build
 
 ## Step 1: Download the files
 
-Grab these five files into the same folder (e.g. `~/Downloads`):
+You need **five files total, all sitting in the same folder** (e.g. `~/Downloads`). Four come from GitHub, and **one you already have from this chat and must save yourself** — it's not on GitHub, since it was custom-built for you here.
 
-- `bc250-rebuild.sh`
-- `bc250-add-game.sh`
-- `bc250-doctor.sh`
-- `bc250_driconf_fix.patch`
-- `bc250-steamos-prep.sh` ← the SteamOS wrapper
+| # | File | Where it comes from |
+|---|------|---------------------|
+| 1 | `bc250-rebuild.sh` | GitHub (commands below) |
+| 2 | `bc250-add-game.sh` | GitHub (commands below) |
+| 3 | `bc250-doctor.sh` | GitHub (commands below) |
+| 4 | `bc250_driconf_fix.patch` | GitHub (commands below) |
+| 5 | **`bc250-steamos-prep.sh`** | **Download it from the chat message where it was shared — click the file, save it, and make sure it ends up in `~/Downloads` next to the other four.** |
 
-These are pulled from the repo's **`Steam-OS`** branch:
+> ⚠️ **Easy mistake to make:** if `bc250-steamos-prep.sh` isn't in the same folder as the other four when you run it, it fails immediately with "Could not find bc250-rebuild.sh." That's intentional — it fails loudly instead of guessing or doing something wrong silently. If you see that error, check `ls ~/Downloads` and confirm all five files are actually there.
+
+Run these to grab the first four (pulled from the repo's **`Steam-OS`** branch):
 
 ```bash
 mkdir -p ~/Downloads && cd ~/Downloads
@@ -42,7 +46,18 @@ curl -LO https://raw.githubusercontent.com/lonewolf0622/BC-250-Mesh-Shader-Patch
 
 (Copy `bc250-steamos-prep.sh` into the same folder from wherever you saved it.)
 
-## Step 2: Run the SteamOS prep + build
+## Step 2: Double-check you have all five files
+
+Before running anything, confirm everything landed in the right place:
+
+```bash
+cd ~/Downloads
+ls bc250-rebuild.sh bc250-add-game.sh bc250-doctor.sh bc250_driconf_fix.patch bc250-steamos-prep.sh
+```
+
+You should see all five filenames printed back with no "No such file or directory" errors. If one is missing, go back and grab it before continuing — running the prep script without all five in place will just stop early with a clear error, but it's faster to check now.
+
+## Step 3: Run the SteamOS prep + build
 
 ```bash
 chmod +x bc250-steamos-prep.sh
@@ -60,7 +75,7 @@ This single command will, in order:
 
 It's safe to rerun if something fails partway — just fix whatever it reported and run it again.
 
-## Step 3: Register your game
+## Step 4: Register your game
 
 ```bash
 chmod +x bc250-add-game.sh
@@ -69,7 +84,7 @@ bash bc250-add-game.sh
 
 Launch the game through Steam when prompted, then pick it from the list.
 
-## Step 4: Set the Steam launch option
+## Step 5: Set the Steam launch option
 
 Right-click the game in Steam → **Properties** → **General** → **Launch Options**:
 
@@ -79,7 +94,7 @@ VK_ICD_FILENAMES=/home/deck/radeon_driconf_icd.x86_64.json %command%
 
 Replace `deck` with your actual username if different (check with `whoami`).
 
-## Step 5: Verify
+## Step 6: Verify
 
 ```bash
 chmod +x bc250-doctor.sh
@@ -111,7 +126,7 @@ Check it's active by opening a fresh terminal:
 echo $VK_ICD_FILENAMES
 ```
 
-If that prints your JSON path, you're set — you can skip Step 4 above for any future game.
+If that prints your JSON path, you're set — you can skip Step 5 above for any future game.
 
 ### If you also want TMPDIR to persist (only needed if you rebuild the driver often)
 

@@ -8,10 +8,15 @@
 # since that's also read-only.
 #
 # Usage: bash bc250-rebuild-bazzite.sh [mesa-tag]
+# Defaults to mesa-26.1.4, the version this patch is tested against.
+# Your own system's Mesa version doesn't matter - this custom driver
+# is built completely separately and never touches it.
 
 set -e
 
 MESA_TAG="${1:-mesa-26.1.4}"
+echo "Using Mesa version: $MESA_TAG"
+
 BUILD_ROOT="$HOME/bc250-mesa-build"
 PATCH_FILE="$(dirname "$(readlink -f "$0")")/bc250_driconf_fix.patch"
 DRIVER_DIR="$HOME/.local/lib"
@@ -34,14 +39,14 @@ mkdir -p "$BUILD_ROOT"
 
 # 1. Create the build container if it doesn't already exist
 if ! distrobox list 2>/dev/null | grep -q "$CONTAINER_NAME"; then
-    echo "[1/7] Creating distrobox build container (first time only)..."
+    echo "[1/9] Creating distrobox build container (first time only)..."
     distrobox create --name "$CONTAINER_NAME" --image archlinux:latest --yes
 else
-    echo "[1/7] Build container already exists, reusing it."
+    echo "[1/9] Build container already exists, reusing it."
 fi
 
 # 2. Install dependencies inside the container
-echo "[2/7] Installing build dependencies inside the container..."
+echo "[2/9] Installing build dependencies inside the container..."
 distrobox enter "$CONTAINER_NAME" -- sudo pacman -Sy --needed --noconfirm \
     base-devel git python-mako python-yaml python-packaging ninja meson \
     vulkan-headers vulkan-icd-loader glslang spirv-tools \
@@ -52,23 +57,36 @@ distrobox enter "$CONTAINER_NAME" -- sudo pacman -Sy --needed --noconfirm \
 # 3. Back up the currently installed driver, if any
 if [ -f "$DRIVER_OUT" ]; then
     BACKUP_NAME="${DRIVER_OUT}.backup-$(date +%Y%m%d-%H%M%S)"
-    echo "[3/7] Backing up existing driver to $BACKUP_NAME"
+    echo "[3/9] Backing up existing driver to $BACKUP_NAME"
     cp "$DRIVER_OUT" "$BACKUP_NAME"
 else
-    echo "[3/7] No existing driver found, skipping backup."
+    echo "[3/9] No existing driver found, skipping backup."
 fi
 
-# 4. Fresh clone (this happens on the host filesystem, which distrobox
+# 4. Verify the tag actually exists upstream before committing to it -
+#    a detected/installed version doesn't always match an exact Mesa
+#    git tag (point releases and distro-specific builds can differ)
+echo "[4/9] Verifying Mesa tag $MESA_TAG exists upstream..."
+if ! git ls-remote --tags https://gitlab.freedesktop.org/mesa/mesa.git "refs/tags/$MESA_TAG" | grep -q "$MESA_TAG"; then
+    echo ""
+    echo "Tag '$MESA_TAG' doesn't exist in Mesa's upstream repo."
+    echo "Check the exact tag name at"
+    echo "https://gitlab.freedesktop.org/mesa/mesa/-/tags and try again:"
+    echo "  bash bc250-rebuild-bazzite.sh mesa-X.Y.Z"
+    exit 1
+fi
+
+# 5. Fresh clone (this happens on the host filesystem, which distrobox
 #    shares with the container - no need to clone from inside it)
-echo "[4/7] Cloning Mesa ($MESA_TAG)..."
+echo "[5/9] Cloning Mesa ($MESA_TAG)..."
 MESA_DIR="$BUILD_ROOT/mesa-$MESA_TAG"
 rm -rf "$MESA_DIR"
 distrobox enter "$CONTAINER_NAME" -- git clone --depth 1 --branch "$MESA_TAG" \
     https://gitlab.freedesktop.org/mesa/mesa.git "$MESA_DIR"
 
-# 5. Apply the patch (run inside the container, since Bazzite's host
+# 6. Apply the patch (run inside the container, since Bazzite's host
 #    image may not include the `patch` utility at all)
-echo "[5/7] Applying BC-250 driconf patch..."
+echo "[6/9] Applying BC-250 driconf patch..."
 if ! distrobox enter "$CONTAINER_NAME" -- bash -c "cd '$MESA_DIR' && patch -p1 --fuzz=5 -i '$PATCH_FILE'"; then
     echo ""
     echo "!!! PATCH FAILED TO APPLY CLEANLY !!!"
@@ -84,7 +102,7 @@ if ! grep -q "spoof_gfx1013_as_gfx10_3" "$MESA_DIR/src/amd/vulkan/radv_physical_
 fi
 
 # 6. Build, inside the container
-echo "[6/7] Building (this can take 10-30+ minutes)..."
+echo "[7/9] Building (this can take 10-30+ minutes)..."
 distrobox enter "$CONTAINER_NAME" -- bash -c "
     cd '$MESA_DIR'
     meson setup build \
@@ -102,7 +120,7 @@ if [ ! -f "$MESA_DIR/build/src/amd/vulkan/libvulkan_radeon.so" ]; then
 fi
 
 # 7. Install to $HOME (NOT /usr/lib - that's read-only on Bazzite)
-echo "[7/8] Installing driver to $DRIVER_OUT (not /usr/lib - Bazzite's"
+echo "[8/9] Installing driver to $DRIVER_OUT (not /usr/lib - Bazzite's"
 echo "system files are read-only, so we keep everything under your home"
 echo "folder instead)..."
 cp "$MESA_DIR/build/src/amd/vulkan/libvulkan_radeon.so" "$DRIVER_OUT"
@@ -123,11 +141,11 @@ EOF
 #    Bazzite host is minimal by design - some runtime (not build-time)
 #    dependencies may only exist inside the container. Rather than guess
 #    which ones, check what's actually missing and copy exactly those.
-echo "[8/8] Checking for runtime libraries missing on the host..."
+echo "[9/9] Checking for runtime libraries missing on the host..."
 RUNTIME_LIBS_DIR="$HOME/.local/lib/bc250-runtime-libs"
 mkdir -p "$RUNTIME_LIBS_DIR"
 
-MISSING_LIBS=$(ldd "$DRIVER_OUT" 2>/dev/null | grep "not found" | awk '{print $1}')
+MISSING_LIBS=$(env -i LD_LIBRARY_PATH= ldd "$DRIVER_OUT" 2>/dev/null | grep "not found" | awk '{print $1}')
 
 if [ -n "$MISSING_LIBS" ]; then
     echo "Found missing runtime libraries, copying from build container:"
@@ -154,7 +172,33 @@ else
     VERIFY_CMD="VK_ICD_FILENAMES=$ICD_OUT vulkaninfo --summary"
 fi
 
-if eval "$VERIFY_CMD" >/dev/null 2>&1; then
+VERIFY_OUTPUT=$(eval "$VERIFY_CMD" 2>&1)
+VERIFY_STATUS=$?
+
+# Safety net: if verification still fails due to a missing library the ldd
+# check above didn't catch (e.g. a stale LD_LIBRARY_PATH masked it), parse
+# the real error and try to fix it automatically before giving up.
+if [ $VERIFY_STATUS -ne 0 ] && echo "$VERIFY_OUTPUT" | grep -q "cannot open shared object file"; then
+    EXTRA_MISSING=$(echo "$VERIFY_OUTPUT" | grep "cannot open shared object file" | sed -E 's/.*: ([^:]+\.so[^:]*): cannot open.*/\1/' | sort -u)
+    if [ -n "$EXTRA_MISSING" ]; then
+        echo "Verification failed due to a missing library the initial check missed:"
+        for lib in $EXTRA_MISSING; do
+            LIB_PATH=$(distrobox enter "$CONTAINER_NAME" -- find /usr/lib /usr/lib64 -iname "$lib" 2>/dev/null | head -1)
+            if [ -n "$LIB_PATH" ]; then
+                echo "  - $lib (found and copied)"
+                distrobox enter "$CONTAINER_NAME" -- cp "$LIB_PATH" "$RUNTIME_LIBS_DIR/"
+                NEEDS_LD_PATH=1
+            else
+                echo "  - $lib (WARNING: couldn't find this even inside the container)"
+            fi
+        done
+        VERIFY_CMD="LD_LIBRARY_PATH=$RUNTIME_LIBS_DIR VK_ICD_FILENAMES=$ICD_OUT vulkaninfo --summary"
+        VERIFY_OUTPUT=$(eval "$VERIFY_CMD" 2>&1)
+        VERIFY_STATUS=$?
+    fi
+fi
+
+if [ $VERIFY_STATUS -eq 0 ]; then
     echo ""
     echo "=== Success ==="
     echo "Driver built against $MESA_TAG, installed at: $DRIVER_OUT"

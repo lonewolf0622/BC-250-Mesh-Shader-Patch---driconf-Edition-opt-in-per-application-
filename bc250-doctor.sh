@@ -1,19 +1,21 @@
 #!/bin/bash
 # bc250-doctor.sh
 #
-# Checks every piece of the BC-250 mesh shader setup and fixes what
-# it can automatically. Run this if the game shows a fatal error or
-# doesn't seem to be picking up the fix, before troubleshooting
-# manually.
+# Checks every piece of the BC-250 mesh shader setup, actually FIXES
+# what it can automatically (not just describes the fix), and prints
+# the exact, verified Steam launch option to use at the end.
 #
 # Usage: bash bc250-doctor.sh
 
 DRIVER_OUT="$HOME/.local/lib/libvulkan_radeon_driconf.so"
 ICD_OUT="$HOME/radeon_driconf_icd.x86_64.json"
 DRIRC="$HOME/.drirc"
+RUNTIME_LIBS_DIR="$HOME/.local/lib/bc250-runtime-libs"
+CONTAINER_NAME="bc250-mesa-build"
 
 PASS=0
 FAIL=0
+NEEDS_LD_PATH=0
 
 check() {
     echo -n "  Checking: $1 ... "
@@ -40,29 +42,31 @@ else
     problem "Not found at $DRIVER_OUT"
     echo "    -> You need to run bc250-rebuild-bazzite.sh first."
     echo ""
+    echo "=== Cannot continue without a driver. Run the rebuild script and try again. ==="
+    exit 1
 fi
 
 # 2. Is it actually a valid shared library (not empty/corrupted)?
-if [ -f "$DRIVER_OUT" ]; then
-    check "driver file is a valid library"
-    FILETYPE=$(file -b "$DRIVER_OUT" 2>/dev/null)
-    if echo "$FILETYPE" | grep -qi "shared object\|ELF"; then
-        ok
-    else
-        problem "File exists but doesn't look like a real library ($FILETYPE)"
-        echo "    -> It may be corrupted or incomplete. Re-run bc250-rebuild-bazzite.sh."
-        echo ""
-    fi
+check "driver file is a valid library"
+FILETYPE=$(file -b "$DRIVER_OUT" 2>/dev/null)
+if echo "$FILETYPE" | grep -qi "shared object\|ELF"; then
+    ok
+else
+    problem "File exists but doesn't look like a real library ($FILETYPE)"
+    echo "    -> It may be corrupted or incomplete. Re-run bc250-rebuild-bazzite.sh."
+    echo ""
+    exit 1
+fi
 
-    check "driver file size is reasonable"
-    SIZE=$(stat -c%s "$DRIVER_OUT" 2>/dev/null || echo 0)
-    if [ "$SIZE" -gt 10000000 ]; then
-        ok
-    else
-        problem "File is only $SIZE bytes - way too small for a real driver"
-        echo "    -> The build likely failed partway. Re-run bc250-rebuild-bazzite.sh."
-        echo ""
-    fi
+check "driver file size is reasonable"
+SIZE=$(stat -c%s "$DRIVER_OUT" 2>/dev/null || echo 0)
+if [ "$SIZE" -gt 10000000 ]; then
+    ok
+else
+    problem "File is only $SIZE bytes - way too small for a real driver"
+    echo "    -> The build likely failed partway. Re-run bc250-rebuild-bazzite.sh."
+    echo ""
+    exit 1
 fi
 
 # 3. Does the ICD json exist, and does it point at the real driver path?
@@ -103,35 +107,76 @@ EOF
     echo ""
 fi
 
-# 4. Does the driver actually load and respond to Vulkan queries?
-RUNTIME_LIBS_DIR="$HOME/.local/lib/bc250-runtime-libs"
-check "driver loads correctly (vulkaninfo test)"
-if VK_ICD_FILENAMES="$ICD_OUT" vulkaninfo --summary >/tmp/bc250_vulkaninfo_test.log 2>&1; then
+# 4. Does the driver actually load? Test in a completely clean
+#    environment first (not inheriting anything from the current
+#    shell), since a stale LD_LIBRARY_PATH from a previous session can
+#    mask a genuinely missing library and give a false pass here.
+check "driver loads correctly (clean-environment test)"
+mkdir -p "$RUNTIME_LIBS_DIR"
+
+if env -i HOME="$HOME" VK_ICD_FILENAMES="$ICD_OUT" vulkaninfo --summary >/tmp/bc250_vulkaninfo_test.log 2>&1; then
     ok
-elif [ -d "$RUNTIME_LIBS_DIR" ] && LD_LIBRARY_PATH="$RUNTIME_LIBS_DIR" VK_ICD_FILENAMES="$ICD_OUT" vulkaninfo --summary >/tmp/bc250_vulkaninfo_test.log 2>&1; then
-    problem "Driver only loads with LD_LIBRARY_PATH set"
-    echo "    -> Your Steam launch options need to include:"
-    echo "       LD_LIBRARY_PATH=$RUNTIME_LIBS_DIR VK_ICD_FILENAMES=$ICD_OUT %command%"
-    echo ""
 else
-    problem "vulkaninfo failed to run with this driver"
-    echo "    -> Full error saved to /tmp/bc250_vulkaninfo_test.log"
+    problem "Driver failed to load in a clean environment"
+    echo "    -> Real error:"
+    head -5 /tmp/bc250_vulkaninfo_test.log | sed 's/^/       /'
+    echo ""
+
     if grep -q "cannot open shared object file" /tmp/bc250_vulkaninfo_test.log; then
-        MISSING_LIB=$(grep "cannot open shared object" /tmp/bc250_vulkaninfo_test.log | head -1 | awk '{print $1}')
-        echo "    -> Missing library: $MISSING_LIB"
-        echo "    -> Try re-running bc250-rebuild-bazzite.sh - it now copies"
-        echo "       missing runtime libraries automatically. If this still"
-        echo "       happens after that, open an issue on the GitHub repo."
+        MISSING_LIBS=$(grep "cannot open shared object file" /tmp/bc250_vulkaninfo_test.log \
+            | sed -E 's/.*: ([^:]+\.so[^:]*): cannot open.*/\1/' | sort -u)
+        echo "    -> Missing librar(y/ies): $MISSING_LIBS"
+
+        if command -v distrobox >/dev/null 2>&1 && distrobox list 2>/dev/null | grep -q "$CONTAINER_NAME"; then
+            echo "    -> Attempting to auto-fix by copying from the build container..."
+            for lib in $MISSING_LIBS; do
+                LIB_PATH=$(distrobox enter "$CONTAINER_NAME" -- find /usr/lib /usr/lib64 -iname "$lib" 2>/dev/null | head -1)
+                if [ -n "$LIB_PATH" ]; then
+                    distrobox enter "$CONTAINER_NAME" -- cp "$LIB_PATH" "$RUNTIME_LIBS_DIR/"
+                    echo "       - $lib: copied"
+                else
+                    echo "       - $lib: couldn't find this even inside the build container"
+                fi
+            done
+
+            echo "    -> Retesting with the copied librar(y/ies)..."
+            if env -i HOME="$HOME" LD_LIBRARY_PATH="$RUNTIME_LIBS_DIR" VK_ICD_FILENAMES="$ICD_OUT" vulkaninfo --summary >/tmp/bc250_vulkaninfo_test2.log 2>&1; then
+                echo "    -> Fixed. The driver now loads correctly with LD_LIBRARY_PATH set."
+                FAIL=$((FAIL-1))
+                PASS=$((PASS+1))
+                NEEDS_LD_PATH=1
+            else
+                echo "    -> Still failing after the auto-fix attempt. Full error:"
+                head -10 /tmp/bc250_vulkaninfo_test2.log | sed 's/^/       /'
+                echo "    -> Please open an issue on the GitHub repo with this output."
+            fi
+        else
+            echo "    -> Can't auto-fix: the build container isn't available."
+            echo "       Re-run bc250-rebuild-bazzite.sh, which sets up the"
+            echo "       container and handles this automatically during the build."
+        fi
     else
-        echo "    -> First few lines of the error:"
-        head -10 /tmp/bc250_vulkaninfo_test.log | sed 's/^/       /'
+        echo "    -> This isn't a missing-library issue. Full error saved to"
+        echo "       /tmp/bc250_vulkaninfo_test.log - please open a GitHub issue"
+        echo "       with that file attached."
     fi
     echo ""
 fi
 
+# Also check if libs were already present from an earlier run, even if
+# the clean test above passed without needing them right now.
+if [ -d "$RUNTIME_LIBS_DIR" ] && [ -n "$(ls -A "$RUNTIME_LIBS_DIR" 2>/dev/null)" ]; then
+    NEEDS_LD_PATH=1
+fi
+
 # 5. Does the driver report mesh shader support at all (independent of drirc)?
 check "driver reports GFX1013 hardware correctly"
-if VK_ICD_FILENAMES="$ICD_OUT" vulkaninfo --summary 2>/dev/null | grep -qi "GFX1013\|BC-250\|BC250"; then
+if [ "$NEEDS_LD_PATH" -eq 1 ]; then
+    VINFO_CHECK=$(env -i HOME="$HOME" LD_LIBRARY_PATH="$RUNTIME_LIBS_DIR" VK_ICD_FILENAMES="$ICD_OUT" vulkaninfo --summary 2>/dev/null)
+else
+    VINFO_CHECK=$(env -i HOME="$HOME" VK_ICD_FILENAMES="$ICD_OUT" vulkaninfo --summary 2>/dev/null)
+fi
+if echo "$VINFO_CHECK" | grep -qi "GFX1013\|BC-250\|BC250"; then
     ok
 else
     echo "SKIPPED (couldn't confirm - not necessarily a problem, some driver"
@@ -177,18 +222,28 @@ fi
 echo ""
 echo "=== Summary: $PASS passed, $FAIL problem(s) found ==="
 echo ""
+
 if [ "$FAIL" -eq 0 ]; then
-    echo "Everything checks out. If the game still isn't working, the issue"
-    echo "is likely something else - check the exact error message and open"
-    echo "an issue on the GitHub repo with these details:"
+    echo "Everything checks out and has been verified working end-to-end."
     echo ""
-    echo "  Current ~/.drirc contents:"
-    cat "$DRIRC" 2>/dev/null | sed 's/^/    /' || echo "    (file doesn't exist)"
+    echo "Your Steam launch option for this game:"
     echo ""
-    echo "  Current ICD contents:"
-    cat "$ICD_OUT" 2>/dev/null | sed 's/^/    /' || echo "    (file doesn't exist)"
+    if [ "$NEEDS_LD_PATH" -eq 1 ]; then
+        echo "  LD_LIBRARY_PATH=$RUNTIME_LIBS_DIR VK_ICD_FILENAMES=$ICD_OUT %command%"
+    else
+        echo "  VK_ICD_FILENAMES=$ICD_OUT %command%"
+    fi
+    echo ""
+    echo "Make sure the game's executable name is actually listed in ~/.drirc"
+    echo "(use bc250-add-game.sh if you haven't added it yet)."
 else
-    echo "Fix the problem(s) marked above (some were auto-fixed already),"
-    echo "then run this script again to confirm everything passes before"
-    echo "trying to launch the game again."
+    echo "Some problems couldn't be auto-fixed - see above for details."
+    echo "Fix those, then run this script again to get a verified launch"
+    echo "command."
+    echo ""
+    echo "Current ~/.drirc contents:"
+    cat "$DRIRC" 2>/dev/null | sed 's/^/  /' || echo "  (file doesn't exist)"
+    echo ""
+    echo "Current ICD contents:"
+    cat "$ICD_OUT" 2>/dev/null | sed 's/^/  /' || echo "  (file doesn't exist)"
 fi
